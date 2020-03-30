@@ -25,6 +25,7 @@ class BalanceOutput extends Component {
         {this.props.userInput.format === 'CSV' ? (
           <pre>{utils.toCSV(this.props.balance)}</pre>
         ) : null}
+        {this.props.entries}
         {this.props.userInput.format === 'HTML' ? (
           <table className="table">
             <thead>
@@ -75,18 +76,62 @@ BalanceOutput.propTypes = {
   }).isRequired
 };
 
-export default connect(state => {
-  let balance = [];
+/**
+ * Filter by Range
+ * @param {number} start period
+ * @param {number} end period
+ * @param {number} target user input
+ * @returns {boolean}
+ */
+function filterByRange(start, end, target) {
+  if (isNaN(start) && isNaN(end)) return true;
+  if (isNaN(start)) return target <= end;
+  if (isNaN(end)) return target >= start;
 
-  /* YOUR CODE GOES HERE */
+  return target >= start && target <= end;
+}
 
+export default connect(({ accounts, userInput, journalEntries }) => {
+  const hashAccounts = {};
+
+  for (let account of accounts) {
+    hashAccounts[account.ACCOUNT] = account.LABEL; 
+  }
+
+  const balance = journalEntries.filter(e => (
+    filterByRange(userInput.startAccount, userInput.endAccount, e.ACCOUNT) &&
+    filterByRange(userInput.startPeriod, userInput.endPeriod, e.PERIOD)
+  )).map(e => ({
+    ...e,
+    DESCRIPTION: hashAccounts[e.ACCOUNT],
+    BALANCE: e.DEBIT - e.CREDIT,
+  })).sort((a, b) => a.ACCOUNT - b.ACCOUNT);
+  
+  const balanceGroupedObject = balance.reduce((acum, current) => {
+    if (acum[current.ACCOUNT]) {
+      acum[current.ACCOUNT] = {
+        ...current,
+        DEBIT: acum[current.ACCOUNT].DEBIT + current.DEBIT,
+        CREDIT: acum[current.ACCOUNT].CREDIT + current.CREDIT,
+        BALANCE: acum[current.ACCOUNT].BALANCE + current.BALANCE,
+      }
+    } else {
+      acum[current.ACCOUNT] = {
+        ...current,
+      }
+    }
+    return acum;
+  }, {});
+
+  const balanceGrouped = Object.keys(balanceGroupedObject).map(key => ({ ...balanceGroupedObject[key] }));
   const totalCredit = balance.reduce((acc, entry) => acc + entry.CREDIT, 0);
   const totalDebit = balance.reduce((acc, entry) => acc + entry.DEBIT, 0);
 
   return {
-    balance,
+    balance: balanceGrouped,
     totalCredit,
     totalDebit,
-    userInput: state.userInput
+    userInput: userInput,
+    entries: balance.length,
   };
 })(BalanceOutput);
